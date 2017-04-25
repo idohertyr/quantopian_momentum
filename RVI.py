@@ -63,20 +63,21 @@ def initialize(context):
     # Define stock
     context.stock = sid(41968)
 
-    # Update data every 5 seconds.
+    # Minute timer for when to execute updates
     context.count = 0
 
-    # Define data structure
-    context.data = {}
-
     # Define RVI Relative Vigor Index
-    context.rvi = 0
+    context.rvis = list()
+
+    # Selected RVI period
+    context.periods = 0
+    context.select_period = 20
 
     # Numerator
-    context.numerator = 0
+    context.numerators = list()
 
     # Denominator
-    context.denominator = 0
+    context.denominators = list()
     pass
 
 def before_trading_start(context, data):
@@ -100,77 +101,76 @@ def my_record_vars(context, data):
     """
     Plot variables at the end of each day.
     """
+    print (context.rvis)
     pass
 
 def handle_data(context, data):
     """
     Called every minute.
     """
-    # Perform operations every 4 mins
+    # Minute timer
     context.count += 1
-    if(context.count == 4):
-        #print context.data
-        context.count = 0
-        update_context(context)
-
+    if(context.count == 4): # Every four minutes
+        context.count = 0 # reset timer
+        price_history = update_data(context.stock, data) # Gets last four minutes of OHLC
+        update_rvi_variables(context, context.stock, price_history) # Calculates RVI
     else:
-        context.data[context.stock] = update_data(context, data, context.stock)
+        pass
     pass
 
-def update_data(context, data, stock): # Gets OHLC for given stock
+def update_data(stock, data): # Gets OHLC for given stock, last 4 m
     data = data.history(stock, ['open', 'high', 'low', 'close'], 4, '1m')
     return data
 
-def update_context(context):
-    # Perform RVI calculation
+# Performs Numerator and Denominator calculations for RVI, then adds
+# them to a list size defined in initialize() (context.select_period)
+def update_rvi_variables(context, stock, price_history):
+    context.periods += 1
 
     # Calculate RVI numerator
-    context.numerator = get_rvi_numerator(context)
-    print ('numerator ---' + str(context.numerator))
+    numerator = get_ohlc_difference(stock, price_history, 'close', 'open')
+    #print ('numerator ---' + str(numerator))
 
     # Calculate RVI denominator
-    context.denominator = get_rvi_denominator(context)
-    print ('denominator ---' + str(context.denominator))
+    denominator = get_ohlc_difference(stock, price_history, 'high', 'low')
+    #print ('denominator ---' + str(denominator))
+
+    # Add Numerator and Denominator to their respective lists
+    context.denominators.append(denominator)
+    context.numerators.append(numerator)
+
+    # Check if there is enough select_period - get SMAs
+    if (context.periods == context.select_period):
+        context.periods -= 1
+
+        # Remove oldest
+        context.numerators.pop(0)
+        context.denominators.pop(0)
+
+        # Moving average for select_period
+        num_sma = np.average(context.numerators)
+        den_sma = np.average(context.denominators)
+
+        # Update RVI list for Signal line
+        context.rvis.append(num_sma/den_sma)
     pass
 
-def get_rvi(context):
-    pass
-
-# Returns numerator for RVI calculation
-def get_rvi_numerator(context):
-    # Perform numerator variables and assign corresponding local a, b, c, and d.
+# Returns OHLC difference - Numerator and Denominator for RVI Calculation
+def get_ohlc_difference(stock, price_history, col1, col2):
+    # Perform denominator variables and assign correspong local a, b, c, and d
     for i in range(4):
         if (i == 0):
-            a = (context.data[context.stock][3:]['close'] - context.data[context.stock][3:]['open'])
+            a = (price_history[3:][col1] - price_history[3:][col2])
         if (i == 1):
-            b = (context.data[context.stock][1:-2]['close'] - context.data[context.stock][1:-2]['open'])
+            b = (price_history[1:-2][col1] - price_history[1:-2][col2])
         if (i == 2):
-            c = (context.data[context.stock][2:-1]['close'] - context.data[context.stock][2:-1]['open'])
+            c = (price_history[2:-1][col1] - price_history[2:-1][col2])
         if (i == 3):
-            d = (context.data[context.stock][:-3]['close'] - context.data[context.stock][:-3]['open'])
-    # Perform numerator calculation
-    # numerator = ( a + (2 * b) + (2 * c) + d ) / 6
-    numerator = ((float(a)+(2*float(b)) + (2*float(c)) + float(d))/6)
-    numerator = check_data(numerator)
-    return numerator
-
-# Returns the denominator for RVI calculation
-def get_rvi_denominator(context):
-    # Perform denominator variables and assign correspong local e, f, g, and h
-    for i in range(4):
-        if (i == 0):
-            e = (context.data[context.stock][3:]['high'] - context.data[context.stock][3:]['low'])
-        if (i == 1):
-            f = (context.data[context.stock][1:-2]['high'] - context.data[context.stock][1:-2]['low'])
-        if (i == 2):
-            g = (context.data[context.stock][2:-1]['high'] - context.data[context.stock][2:-1]['low'])
-        if (i == 3):
-            h = (context.data[context.stock][:-3]['high'] - context.data[context.stock][:-3]['low'])
-    # Perform denominator calculation
-    # denominator = ( e + (2 * f) + (2 * g) + h) / 6
-    denominator = ((float(e)+(2*float(f))+(2*float(g))+float(h))/6)
-    denominator = check_data(denominator)
-    return denominator
+            d = (price_history[:-3][col1] - price_history[:-3][col2])
+    # Formula = ( a + (2 * b) + (2 * c) + d ) / 6
+    differences = ((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
+    differences = check_data(differences)
+    return differences
 
 # Checks data for Nan
 def check_data(data):
