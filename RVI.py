@@ -2,46 +2,7 @@
 Author: Ian Doherty
 Date: April 13, 2017
 
-This algorithm is made to evaluate momentum and to produce a trading strategy based on
-Momentum. This algorithm serves as an area to test momentum strategies separate from
-any real trading strategy.
-
-Momentum Tools: [RVI, ]
-
-Relative Vigor Index
-=====================
-INPUTS: 
-    OHLC prices
-
-RVI
-===========
-a = close - open
-b = close - open // one bar prior to a
-c = close - open // one bar prior to b
-d = close - open // one bar prior to c
-
-numerator = ( a + (2 * b) + (2 * c) + d ) / 6
-
-e = high - low // of bar a
-f = high - low // of bar b
-g = high - low // of bar c
-h = high - low // of bar d
-
-denominator = ( e + (2 * f) + (2 * g) + h) / 6
-
-Current period selected = 20
-
-RVI = SMA of numerator for selected period /
-        SMA of denominator for selected period
-        
-SIGNAL_LINE
-===========
-i = RVI // one bar prior
-j = RVI // one bar prior to i
-k = RVI // one bar prior to j
-
-SIGNAL_LINE = (RVI + (2 * i) + (2 * j) + k) / 6
-
+This algorithm trades using RVI.
 
 """
 
@@ -183,4 +144,3 @@ def check_data(data):
         # replaces Nan values from list
         data = [0 if x != x else x for x in data]
         return data
-
