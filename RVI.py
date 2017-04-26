@@ -10,22 +10,16 @@ import numpy as np
 import pandas as pd
 import math
 
-
 def initialize(context):
     """
     Called once at the start of the algorithm.
     """
-    # Rebalance every day, 1 hour after market open.
-    # schedule_function(my_rebalance, date_rules.every_day(), time_rules.market_open())
-
-    # Record tracking variables at the end of each day.
-    # schedule_function(my_record_vars, date_rules.every_day(), time_rules.market_close())
 
     # Close Trading in last 30 minutes
-    schedule_function(stop_trading, date_rules.every_day(), time_rules.market_close(minutes=30))
+    schedule_function(stop_trading, date_rules.every_day(), time_rules.market_close(hours=1))
 
     # Define stock
-    context.stock = sid(41968)
+    context.stock = sid(40516)
 
     # Minute timer for when to execute updates
     context.count = 0
@@ -38,7 +32,9 @@ def initialize(context):
 
     # Selected RVI period
     context.periods = 0
-    context.select_period = 20
+    context.select_period = 19
+    context.data_periods = 4
+    context.timer = 19
 
     # Numerator
     context.numerators = list()
@@ -54,13 +50,11 @@ def initialize(context):
 
     pass
 
-
 def before_trading_start(context, data):
     """
     Called every day before market open.
     """
     context.should_trade = True
-
 
 def my_assign_weights(context, data):
     """
@@ -70,19 +64,18 @@ def my_assign_weights(context, data):
     rvi = context.rvis[3:][0]
     signal_line = context.signal_line[0]
 
-    # my_record_vars(context, rvi, signal_line)
-    # log.info ('Current Price: ' + str(data.current(context.stock, 'price')))
-    # log.info ('RVI: ' + str(rvi) + ' Signal Line: ' + str(signal_line))
+    #my_record_vars(context, rvi, signal_line)
+    #log.info ('Current Price: ' + str(data.current(context.stock, 'price')))
+    #log.info ('RVI: ' + str(rvi) + ' Signal Line: ' + str(signal_line))
 
     # If signal line is bearish
     if (signal_line > rvi):
         context.weight = 1
-        # print ('bullish')
+        #print ('bullish')
     else:
         context.weight = 0
-        # print ('bearish')
+        #print ('bearish')
     pass
-
 
 def my_rebalance(context, data):
     """
@@ -99,14 +92,12 @@ def my_rebalance(context, data):
             order_target_value(stock, 0)
     pass
 
-
 def my_record_vars(context, rvi, signal_line):
     """
     Plot variables at the end of each day.
     """
-    record(RVI=rvi, Signal=signal_line, positions=(context.portfolio.positions_value / context.portfolio.starting_cash))
+    record(RVI = rvi, Signal = signal_line, positions = (context.portfolio.positions_value/context.portfolio.starting_cash))
     pass
-
 
 def handle_data(context, data):
     """
@@ -114,10 +105,10 @@ def handle_data(context, data):
     """
     # Minute timer - every 4 mins
     context.count += 1
-    if (context.count == 4):
-        context.count = 0  # reset timer
-        price_history = update_data(context.stock, data)  # Gets last four minutes of OHLC
-        update_rvi_variables(context, context.stock, price_history)  # Calculates RVI
+    if(context.count == context.timer):
+        context.count = 0 # reset timer
+        price_history = update_data(context, context.stock, data) # Gets OHLC
+        update_rvi_variables(context, context.stock, price_history) # Calculates RVI
     else:
         pass
 
@@ -130,22 +121,20 @@ def handle_data(context, data):
 
     pass
 
-
-def update_data(stock, data):  # Gets OHLC for given stock, last 4 m
-    history = data.history(stock, ['open', 'high', 'low', 'close'], 4, '1m')
+def update_data(context, stock, data): # Gets OHLC for given stock, last 4
+    history = data.history(stock, ['open', 'high', 'low', 'close'], context.data_periods, '1m')
     return history
-
 
 # Performs Numerator and Denominator calculations for RVI, then adds
 # them to a list size defined in initialize() (context.select_period)
 def update_rvi_variables(context, stock, price_history):
     # Calculate RVI numerator
     numerator = get_ohlc_difference(stock, price_history, 'close', 'open')
-    # print ('numerator ---' + str(numerator))
+    #print ('numerator ---' + str(numerator))
 
     # Calculate RVI denominator
     denominator = get_ohlc_difference(stock, price_history, 'high', 'low')
-    # print ('denominator ---' + str(denominator))
+    #print ('denominator ---' + str(denominator))
 
     # Add Numerator and Denominator to their respective lists
     context.denominators.append(denominator)
@@ -155,6 +144,7 @@ def update_rvi_variables(context, stock, price_history):
 
     # Check if there is enough select_period - get SMAs
     if (context.periods == context.select_period):
+
         # Moving average for select_period
         num_sma = np.average(context.numerators)
         den_sma = np.average(context.denominators)
@@ -166,10 +156,9 @@ def update_rvi_variables(context, stock, price_history):
         context.periods -= 1
 
         # Update RVI list for Signal line
-        context.rvis.append(num_sma / den_sma)
+        context.rvis.append(num_sma/den_sma)
 
     pass
-
 
 # Returns OHLC difference - Numerator and Denominator for RVI Calculation
 def get_ohlc_difference(stock, price_history, col1, col2):
@@ -184,10 +173,9 @@ def get_ohlc_difference(stock, price_history, col1, col2):
         if (i == 3):
             d = (price_history[:-3][col1] - price_history[:-3][col2])
     # Formula = ( a + (2 * b) + (2 * c) + d ) / 6
-    differences = ((float(a) + (2 * float(b)) + (2 * float(c)) + float(d)) / 6)
+    differences = ((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
     differences = check_data(differences)
     return differences
-
 
 # Get Signal Line for RVI
 # (RVI + (2 * i) + (2 * j) + k) / 6
@@ -198,10 +186,8 @@ def get_rvi_signal_line(context, rvis):
     b = rvis[2:3][0]
     c = rvis[1:2][0]
     d = rvis[:1][0]
-    context.signal_line.append((float(a) + (2 * float(b)) + (2 * float(c)) + float(d)) / 6)
+    context.signal_line.append((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
     pass
-
-
 # Checks data for Nan
 def check_data(data):
     if (type(data) == float):
@@ -214,8 +200,6 @@ def check_data(data):
         data = [0 if x != x else x for x in data]
         return data
     pass
-
-
 # Stop trading 30 minutes for market close
 def stop_trading(context, data):
     context.should_trade = False
