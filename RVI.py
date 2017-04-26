@@ -30,6 +30,9 @@ def initialize(context):
     # Define RVI Relative Vigor Index
     context.rvis = list()
 
+    # Define RVI Signal Line
+    context.signal_line = list()
+
     # Selected RVI period
     context.periods = 0
     context.select_period = 20
@@ -39,6 +42,9 @@ def initialize(context):
 
     # Denominator
     context.denominators = list()
+
+    # Define weight
+    context.weight = 0
     pass
 
 def before_trading_start(context, data):
@@ -50,33 +56,63 @@ def my_assign_weights(context, data):
     """
     Assign weights to securities that we want to order.
     """
+    # Get RVI indicator
+    rvi = context.rvis[3:][0]
+    signal_line = context.signal_line[0]
+
+    #log.info ('RVI: ' + str(rvi) + ' Signal Line: ' + str(signal_line))
+
+    # If signal line is bearish
+    if (signal_line > rvi):
+        context.weight = 1
+    else:
+        context.weight = 0
     pass
 
 def my_rebalance(context, data):
     """
     Execute orders according to our schedule_function() timing. 
     """
+    stock = context.stock
+    weight = context.weight
+
+    if ((data.can_trade(stock)) & (len(get_open_orders()) == 0)):
+        # if bullish buy stock
+        if (weight == 1):
+            order(stock, 30)
+        else:
+            # If not bullish remove all positions
+            order_target_percent(stock, 0)
+    print context.portfolio.positions_value
     pass
 
 def my_record_vars(context, data):
     """
     Plot variables at the end of each day.
     """
-    print (context.rvis)
+
     pass
 
 def handle_data(context, data):
     """
     Called every minute.
     """
-    # Minute timer
+    # Minute timer - every 4 mins
     context.count += 1
-    if(context.count == 4): # Every four minutes
+    if(context.count == 4):
         context.count = 0 # reset timer
         price_history = update_data(context.stock, data) # Gets last four minutes of OHLC
         update_rvi_variables(context, context.stock, price_history) # Calculates RVI
     else:
         pass
+
+    # If there is enough data for Signal Line Calculation
+    if (len(context.rvis) == 4):
+        get_rvi_signal_line(context, context.rvis)
+        my_assign_weights(context, data)
+        my_rebalance(context, data)
+        context.rvis.pop(0)
+
     pass
 
 def update_data(stock, data): # Gets OHLC for given stock, last 4 m
@@ -133,6 +169,17 @@ def get_ohlc_difference(stock, price_history, col1, col2):
     differences = check_data(differences)
     return differences
 
+# Get Signal Line for RVI
+# (RVI + (2 * i) + (2 * j) + k) / 6
+def get_rvi_signal_line(context, rvis):
+    if (len(context.signal_line) == 1):
+        context.signal_line.pop(0)
+    a = rvis[3:][0]
+    b = rvis[2:3][0]
+    c = rvis[1:2][0]
+    d = rvis[:1][0]
+    context.signal_line.append((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
+    pass
 # Checks data for Nan
 def check_data(data):
     if (type(data) == float):
@@ -144,3 +191,4 @@ def check_data(data):
         # replaces Nan values from list
         data = [0 if x != x else x for x in data]
         return data
+
