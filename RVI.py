@@ -19,7 +19,9 @@ def initialize(context):
     schedule_function(stop_trading, date_rules.every_day(), time_rules.market_close(hours=1))
 
     # Define stock
-    context.stock = sid(40516)
+    context.stock = sid(41968)
+
+    set_benchmark(sid(41968))
 
     # Minute timer for when to execute updates
     context.count = 0
@@ -125,8 +127,7 @@ def update_data(context, stock, data): # Gets OHLC for given stock, last 4
     history = data.history(stock, ['open', 'high', 'low', 'close'], context.data_periods, '1m')
     return history
 
-# Performs Numerator and Denominator calculations for RVI, then adds
-# them to a list size defined in initialize() (context.select_period)
+# Performs Numerator and Denominator calculations for RVI
 def update_rvi_variables(context, stock, price_history):
     # Calculate RVI numerator
     numerator = get_ohlc_difference(stock, price_history, 'close', 'open')
