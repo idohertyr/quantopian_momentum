@@ -18,34 +18,38 @@ def initialize(context):
     # Close Trading in last 30 minutes
     schedule_function(stop_trading, date_rules.every_day(), time_rules.market_close(hours=1))
 
-    # Define stock
-    context.stock = sid(41968)
+    class Stock:
+        def __init__(self, sid):
+            self.sid = sid
+            self.price_history = list()
+            self.numerators = list()
+            self.denominators = list()
+            self.weight = 0
+            # Define RVI Relative Vigor Index
+            self.rvis = list()
+            self.signal_line = list()
+            pass
+        pass
 
-    set_benchmark(sid(41968))
+    # Create TVIX
+    tvix = Stock(sid(40515))
+
+    # Create XIV
+    vix = Stock(sid(40516))
+
+    # Define current period
+    context.period = 0
+
+    # Define price history data period
+    context.data_period = 4
+
+    # Define select period
+    context.select_period = 19
+
+    context.securities = [tvix, vix]
 
     # Minute timer for when to execute updates
     context.count = 0
-
-    # Define RVI Relative Vigor Index
-    context.rvis = list()
-
-    # Define RVI Signal Line
-    context.signal_line = list()
-
-    # Selected RVI period
-    context.periods = 0
-    context.select_period = 19
-    context.data_periods = 4
-    context.timer = 19
-
-    # Numerator
-    context.numerators = list()
-
-    # Denominator
-    context.denominators = list()
-
-    # Define weight
-    context.weight = 0
 
     # Define trade boolean
     context.should_trade = False
@@ -58,40 +62,32 @@ def before_trading_start(context, data):
     """
     context.should_trade = True
 
-def my_assign_weights(context, data):
+def my_assign_weights(stock):
     """
     Assign weights to securities that we want to order.
     """
     # Get RVI indicator
-    rvi = context.rvis[3:][0]
-    signal_line = context.signal_line[0]
-
-    #my_record_vars(context, rvi, signal_line)
-    #log.info ('Current Price: ' + str(data.current(context.stock, 'price')))
-    #log.info ('RVI: ' + str(rvi) + ' Signal Line: ' + str(signal_line))
+    rvi = stock.rvis[3:][0]
+    signal_line = stock.signal_line[0]
 
     # If signal line is bearish
     if (signal_line > rvi):
-        context.weight = 1
+        stock.weight = 1
         #print ('bullish')
     else:
-        context.weight = 0
+        stock.weight = 0
         #print ('bearish')
     pass
 
-def my_rebalance(context, data):
+def my_rebalance(context, stock, data):
     """
     Execute orders according to our schedule_function() timing. 
     """
-    stock = context.stock
-    weight = context.weight
-
-    if ((data.can_trade(stock)) & (len(get_open_orders()) == 0) & (context.should_trade)):
-        # if bullish buy stock
-        if (weight == 1):
-            order_target_percent(stock, 1)
-        else:
-            order_target_value(stock, 0)
+    if ((data.can_trade(stock.sid)) &
+        (len(get_open_orders(stock.sid)) == 0) &
+        (context.should_trade) &
+        (context.portfolio.cash > 0)):
+        order_target_percent(stock.sid, stock.weight)
     pass
 
 def my_record_vars(context, rvi, signal_line):
@@ -107,59 +103,60 @@ def handle_data(context, data):
     """
     # Minute timer - every 4 mins
     context.count += 1
-    if(context.count == context.timer):
+    if(context.count == context.data_period):
         context.count = 0 # reset timer
-        price_history = update_data(context, context.stock, data) # Gets OHLC
-        update_rvi_variables(context, context.stock, price_history) # Calculates RVI
+        for stock in context.securities:
+            stock.price_history = update_price_history(context, stock.sid, data) # Gets OHLC
+            stock.numerators = get_numerator(stock)
+            stock.denominators = get_denominator(stock)
+            stock = update_rvi_variables(context, stock) # Calculates RVI
+        if ((len(stock.rvis) > 3)): # If there is enough data for Signal Line Calculation
+            stock = get_rvi_signal_line(context, stock)
+            my_assign_weights(stock)
+            my_rebalance(context, stock, data)
+            stock.rvis.pop(0)
     else:
         pass
-
-    # If there is enough data for Signal Line Calculation
-    if (len(context.rvis) > 3):
-        get_rvi_signal_line(context, context.rvis)
-        my_assign_weights(context, data)
-        my_rebalance(context, data)
-        context.rvis.pop(0)
-
     pass
 
-def update_data(context, stock, data): # Gets OHLC for given stock, last 4
-    history = data.history(stock, ['open', 'high', 'low', 'close'], context.data_periods, '1m')
+def update_price_history(context, stock, data): # Gets OHLC for given stock, last 4
+    history = data.history(stock, ['open', 'high', 'low', 'close'], context.data_period, '1m')
     return history
 
-# Performs Numerator and Denominator calculations for RVI
-def update_rvi_variables(context, stock, price_history):
+def get_numerator(stock):
     # Calculate RVI numerator
-    numerator = get_ohlc_difference(stock, price_history, 'close', 'open')
-    #print ('numerator ---' + str(numerator))
+    numerator = get_ohlc_difference(stock.sid, stock.price_history, 'close', 'open')
+    # Append to self numerators
+    stock.numerators.append(numerator)
+    # Return stock numerators
+    return stock.numerators
 
+def get_denominator(stock):
     # Calculate RVI denominator
-    denominator = get_ohlc_difference(stock, price_history, 'high', 'low')
-    #print ('denominator ---' + str(denominator))
+    denominator = get_ohlc_difference(stock.sid, stock.price_history, 'high', 'low')
+    # Append to self denominators
+    stock.denominators.append(denominator)
+    # Return stock denominators
+    return stock.denominators
 
-    # Add Numerator and Denominator to their respective lists
-    context.denominators.append(denominator)
-    context.numerators.append(numerator)
-
-    context.periods += 1
-
+# Performs Numerator and Denominator calculations for RVI
+def update_rvi_variables(context, stock):
+    context.period += 1
     # Check if there is enough select_period - get SMAs
-    if (context.periods == context.select_period):
-
+    if (context.period == context.select_period):
         # Moving average for select_period
-        num_sma = np.average(context.numerators)
-        den_sma = np.average(context.denominators)
+        num_sma = np.average(stock.numerators)
+        den_sma = np.average(stock.denominators)
 
         # Remove oldest
-        context.numerators.pop(0)
-        context.denominators.pop(0)
+        stock.numerators.pop(0)
+        stock.denominators.pop(0)
 
-        context.periods -= 1
+        context.period -= 1
 
         # Update RVI list for Signal line
-        context.rvis.append(num_sma/den_sma)
-
-    pass
+        stock.rvis.append(num_sma/den_sma)
+    return stock
 
 # Returns OHLC difference - Numerator and Denominator for RVI Calculation
 def get_ohlc_difference(stock, price_history, col1, col2):
@@ -180,15 +177,15 @@ def get_ohlc_difference(stock, price_history, col1, col2):
 
 # Get Signal Line for RVI
 # (RVI + (2 * i) + (2 * j) + k) / 6
-def get_rvi_signal_line(context, rvis):
-    if (len(context.signal_line) == 1):
-        context.signal_line.pop(0)
-    a = rvis[3:][0]
-    b = rvis[2:3][0]
-    c = rvis[1:2][0]
-    d = rvis[:1][0]
-    context.signal_line.append((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
-    pass
+def get_rvi_signal_line(context, stock):
+    if (len(stock.signal_line) == 1):
+        stock.signal_line.pop(0)
+    a = stock.rvis[3:][0]
+    b = stock.rvis[2:3][0]
+    c = stock.rvis[1:2][0]
+    d = stock.rvis[:1][0]
+    stock.signal_line.append((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
+    return stock
 # Checks data for Nan
 def check_data(data):
     if (type(data) == float):
