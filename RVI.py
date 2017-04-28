@@ -27,6 +27,18 @@ class Stock:
         pass
     pass
 
+    # Print out Stock info
+    def print_stock(self):
+        #print ('SID: ' + str(self.sid))
+        #print ('Price History: ' + str(self.price_history))
+        #print ('Numerators: ' + str(self.rvi.numerators))
+        #print ('Denominators: ' + str(self.rvi.denominators))
+        #print ('Weight: ' + str(self.weight))
+        #print ('RVIS: ' + str(self.rvi.rvis))
+        #print ('Signal Line: ' + str(self.rvi.signal_line))
+        #print ('Tradable: ' + str(self.should_trade))
+    pass
+
 # RVI Class
 class RVI:
     def __init__(self):
@@ -86,14 +98,14 @@ class RVI:
 
     # Get Signal Line for RVI
     # (RVI + (2 * i) + (2 * j) + k) / 6
-    def get_rvi_signal_line(self, stock):
-        if (len(stock.rvi.signal_line) == 1):
-            stock.rvi.signal_line.pop(0)
-        a = stock.rvi.rvis[3:][0]
-        b = stock.rvi.rvis[2:3][0]
-        c = stock.rvi.rvis[1:2][0]
-        d = stock.rvi.rvis[:1][0]
-        return((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
+    def get_rvi_signal_line(self):
+        if (len(self.signal_line) == 1):
+            self.signal_line.pop(0)
+        a = self.rvis[3:][0]
+        b = self.rvis[2:3][0]
+        c = self.rvis[1:2][0]
+        d = self.rvis[:1][0]
+        self.signal_line.append(check_data(float(a)+(2*float(b))+(2*float(c))+float(d))/6)
     pass
 
 def initialize(context):
@@ -102,7 +114,7 @@ def initialize(context):
     """
 
     # Close Trading in last 30 minutes
-    schedule_function(stop_trading, date_rules.every_day(), time_rules.market_close(hours=1))
+    schedule_function(stop_trading, date_rules.every_day(), time_rules.market_close(minutes=15))
 
     # Create TVIX
     tvix = Stock(sid(40515))
@@ -178,15 +190,16 @@ def handle_data(context, data):
             stock.rvi.denominators.append(stock.rvi.get_factors(stock, 'high', 'low'))
             stock.rvi.rvis.append(check_data(stock.rvi.update_rvi_variables(stock)))
             if ((len(stock.rvi.rvis) > 3)): # If there is enough data for Signal Line Calculation
-                stock.rvi.signal_line.append(stock.rvi.get_rvi_signal_line(stock))
+                stock.rvi.get_rvi_signal_line()
                 my_assign_weights(stock)
                 my_rebalance(context, stock, data)
                 stock.rvi.rvis.pop(0)
             else:
                 pass
+            stock.print_stock()
     pass
 
-# Checks data for Nan
+# TODO: Need to check for Nan, None..
 def check_data(data):
     new = list()
     if (type(data) == list): # replaces Nan values from list
@@ -194,25 +207,13 @@ def check_data(data):
             if (item):
                 new.append(item)
         return new
-    elif (data):
+    elif data is not None:
         return data
     else:
         return float()
 
-# Stop trading 30 minutes for market close
+
 def stop_trading(context, data):
     for stock in context.securities:
         stock.should_trade = False
-    pass
-
-# Print out Stock info
-def print_stock(stock):
-    #print ('SID: ' + str(stock.sid))
-    #print ('Price History: ' + str(stock.price_history))
-    #print ('Numerators: ' + str(stock.rvi.numerators))
-    #print ('Denominators: ' + str(stock.rvi.denominators))
-    #print ('Weight: ' + str(stock.weight))
-    #print ('RVIS: ' + str(stock.rvi.rvis))
-    #print ('Signal Line: ' + str(stock.rvi.signal_line))
-    #print ('Tradable: ' + str(stock.should_trade))
     pass
