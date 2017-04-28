@@ -201,7 +201,8 @@ def check_data(data):
 
 # Stop trading 30 minutes for market close
 def stop_trading(context, data):
-    context.should_trade = False
+    for stock in context.securities:
+        stock.should_trade = False
     pass
 
 # Print out Stock info
