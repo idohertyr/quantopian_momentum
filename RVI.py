@@ -15,18 +15,13 @@ class Stock:
     # Creates default Stock
     def __init__(self, sid):
         self.sid = sid
-        self.minute_sample = 4
-        self.minute_history = list()
         self.weight = 0
         self.signal_line = list()
         self.should_trade = False
-        self.rvi = RVI()
+        self.sentiment = False
+        self.rvi = RVI(self.sid, '1m', 4, 19)
         self.rsi = RSI(self.sid, '1m', 20)
-        pass
-
-    # Gets OHLC data from the given data period
-    def get_price_history(self, data):
-        self.minute_history = data.history(self.sid, ['open', 'high', 'low', 'close'], self.minute_sample, '1m')
+        self.bbands = BBands(self.sid, '1m', 20)
         pass
 
     # Stops trading instrument
@@ -46,6 +41,7 @@ class Stock:
         #print ('Tradable: ' + str(self.should_trade))
         #print ('RSI price history: ' + str(self.rsi.price_history))
         print ('RSI: ' + str(self.rsi.rsi))
+        print ('BBANDS' + str(self.bbands.bbands))
         pass
 
 # RSI Class
@@ -73,13 +69,22 @@ class RSI:
         pass
     pass
 
+
 # RVI Class
 class RVI:
-    def __init__(self):
+    def __init__(self, sid, unit, sample, select_period):
+        # SID
+        self.sid = sid
+        # Price history candle type
+        self.unit = unit
+        # Sample
+        self.sample = sample
+        # Price History
+        self.prce_history = list()
         # Period Counter
         self.period = 0
         # RVI Select Period
-        self.select_period = 19
+        self.select_period = select_period
         # RVI numerators
         self.numerators = list()
         # RVI denominators
@@ -88,7 +93,11 @@ class RVI:
         self.rvis = list()
         # Signal line
         self.signal_line = list()
+        pass
 
+    # Get price history
+    def get_price_history(self, data):
+        self.price_history = data.history(self.sid, ['open', 'high', 'low', 'close'], self.sample, self.unit)
         pass
 
     # Returns OHLC difference - Numerator and Denominator for RVI Calculation
@@ -109,7 +118,7 @@ class RVI:
         return differences
 
     def get_factors(self, stock, ohlc_type1, ohlc_type2):
-        return self.get_ohlc_difference(stock.minute_history, ohlc_type1, ohlc_type2)
+        return self.get_ohlc_difference(stock.rvi.price_history, ohlc_type1, ohlc_type2)
         pass
 
     # Performs Numerator and Denominator calculations for RVI
@@ -145,6 +154,35 @@ class RVI:
         self.signal_line.append(check_data(float(a)+(2*float(b))+(2*float(c))+float(d))/6)
         pass
 
+    pass
+
+# Bollinger Band Class
+class BBands:
+    def __init__(self, sid, unit, sample):
+        # SID
+        self.sid = sid
+        # Price history unit
+        self.unit = unit
+        # Price history sample size
+        self.sample = sample
+        # Bollinger Bands
+        self.bbands = list()
+        pass
+
+    def get_price_history(self, data):
+        self.price_history = data.history(self.sid, 'close', self.sample + 2, self.unit)
+        pass
+
+    def get_bbands(self, data):
+        self.get_price_history(data)
+        upper, middle, lower = talib.BBANDS(
+            self.price_history,
+            timeperiod = self.sample,
+            nbdevup = 2,
+            nbdevdn = 2,
+            matype = 0)
+        self.bbands = [upper[-1], middle[-1], lower[-1]]
+        pass
     pass
 
 def initialize(context):
@@ -194,15 +232,27 @@ def my_assign_weights(context, stock):
     rvi = stock.rvi.rvis[3:][0]
     signal_line = stock.rvi.signal_line[0]
     rsi = stock.rsi.rsi
+    bbands = stock.bbands.bbands
+
+    # Signals
+    sentiment = stock.sentiment
+    rvi_signal = (signal_line > rvi)
+    # Add RSI
+    # Add BBands
+
+    #stock.print_stock()
+
     default_weight = (float(1)/float(len(context.securities)))
 
     # If signal line is bearish
-    if ((signal_line > rvi)):
-        stock.print_stock()
+    if (rvi_signal & sentiment):
         stock.weight = default_weight
         #print ('bullish')
+    elif (rvi_signal):
+        stock.sentiment = True
     else:
         stock.weight = 0
+        stock.sentiment = False
         #print ('bearish')
     pass
 
@@ -234,8 +284,9 @@ def handle_data(context, data):
     if(context.count == context.enough_data):
         context.count = 0 # reset timer
         for stock in context.securities:
-            stock.get_price_history(data)
+            stock.rvi.get_price_history(data)
             stock.rsi.get_rsi(data)
+            stock.bbands.get_bbands(data)
             stock.rvi.numerators.append(stock.rvi.get_factors(stock, 'close', 'open'))
             stock.rvi.denominators.append(stock.rvi.get_factors(stock, 'high', 'low'))
             stock.rvi.rvis.append(check_data(stock.rvi.update_rvi_variables(stock)))
@@ -249,7 +300,7 @@ def handle_data(context, data):
                 #stock.print_stock()
     pass
 
-#TODO: Need to clean data.
+# TODO: Need to check for Nan, None..
 def check_data(data):
     new = list()
     if (type(data) == list): # replaces Nan values from list
