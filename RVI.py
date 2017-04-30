@@ -2,8 +2,6 @@
 Author: Ian Doherty
 Date: April 13, 2017
 
-This algorithm trades using RVI.
-
 """
 import numpy as np
 import pandas as pd
@@ -18,10 +16,11 @@ class Stock:
         self.weight = 0
         self.signal_line = list()
         self.should_trade = False
-        self.sentiment = False
+        self.sentiment = list()
         self.rvi = RVI(self.sid, '1m', 4, 19)
         self.rsi = RSI(self.sid, '1m', 20)
         self.bbands = BBands(self.sid, '1m', 20)
+        self.sentiment_types = ['buy', 'hold', 'sell']
         pass
 
     # Stops trading instrument
@@ -40,8 +39,39 @@ class Stock:
         #print ('Signal Line: ' + str(self.rvi.signal_line))
         #print ('Tradable: ' + str(self.should_trade))
         #print ('RSI price history: ' + str(self.rsi.price_history))
-        print ('RSI: ' + str(self.rsi.rsi))
-        print ('BBANDS' + str(self.bbands.bbands))
+        #print ('RSI: ' + str(self.rsi.rsi))
+        #print ('BBANDS' + str(self.bbands.bbands))
+        #print ('RVI sentiment: ' + str(self.rvi.sentiment))
+        #print ('RSI sentiment: ' + str(self.rsi.sentiment))
+        #print ('BBands sentiment: ' + str(self.bbands.sentiment))
+        print ('Stock sentiment: ' + str(self.sentiment))
+        pass
+
+    # Get sentiment
+    def get_sentiment(self):
+        types = self.sentiment_types
+
+        if (len(self.rvi.sentiment) > 0):
+            rvi_sentiment = self.rvi.sentiment[-1]
+        else:
+            rvi_sentiment = 'hold'
+
+        rsi_sentiment = self.rsi.sentiment[-1]
+        bbands_sentiment = self.bbands.sentiment[-1]
+
+        if (len(self.sentiment) > 10):
+            self.sentiment.pop(0)
+
+        if ((rvi_sentiment == types[0]) &
+                (rsi_sentiment == types[0]) &
+                (bbands_sentiment == types[0])):
+            self.sentiment.append(types[0])
+        elif ((rvi_sentiment == types[2]) &
+                  (rsi_sentiment == types[2]) &
+                  (bbands_sentiment == types[2])):
+            self.sentiment.append(types[2])
+        else:
+            self.sentiment.append(types[1])
         pass
 
 # RSI Class
@@ -53,6 +83,8 @@ class RSI:
         self.unit = unit
         self.sample = sample
         self.rsi = list()
+        self.sentiment = list()
+        self.sentiment_types = ['buy', 'hold', 'sell']
         pass
 
     # Get Price history based on initialiation variables
@@ -66,8 +98,26 @@ class RSI:
         self.rsi.append(talib.RSI(self.price_history)[-1])
         if(len(self.rsi) == 2):
             self.rsi.pop(0)
+        self.get_sentiment()
+        pass
+
+    # Get sentiment
+    def get_sentiment(self):
+        types = self.sentiment_types
+        rsi = self.rsi[-1]
+
+        if (len(self.sentiment) > 20):
+            self.sentiment.pop(0)
+
+        if (rsi < 40):
+            self.sentiment.append(types[0])
+        elif (rsi > 70):
+            self.sentiment.append(types[2])
+        else:
+            self.sentiment.append(types[1])
         pass
     pass
+
 
 
 # RVI Class
@@ -93,6 +143,9 @@ class RVI:
         self.rvis = list()
         # Signal line
         self.signal_line = list()
+        # Self Sentiment
+        self.sentiment = list()
+        self.sentiment_types = ['buy', 'hold', 'sell']
         pass
 
     # Get price history
@@ -152,7 +205,24 @@ class RVI:
         c = self.rvis[1:2][0]
         d = self.rvis[:1][0]
         self.signal_line.append(check_data(float(a)+(2*float(b))+(2*float(c))+float(d))/6)
+        self.get_sentiment()
         pass
+
+    # Get sentiment
+    def get_sentiment(self):
+        types = self.sentiment_types
+        rvi = self.rvis[3:][0]
+        signal_line = self.signal_line[0]
+
+        if (len(self.sentiment) > 20):
+            self.sentiment.pop(0)
+
+        if (signal_line > rvi):
+            self.sentiment.append(types[0])
+        elif (signal_line < rvi):
+            self.sentiment.append(types[2])
+        else:
+            self.sentiment.append(types[1])
 
     pass
 
@@ -167,6 +237,9 @@ class BBands:
         self.sample = sample
         # Bollinger Bands
         self.bbands = list()
+        # Sentiment
+        self.sentiment = list()
+        self.sentiment_types = ['buy', 'hold', 'sell']
         pass
 
     def get_price_history(self, data):
@@ -182,6 +255,26 @@ class BBands:
             nbdevdn = 2,
             matype = 0)
         self.bbands = [upper[-1], middle[-1], lower[-1]]
+        self.get_sentiment()
+        pass
+
+    # Get sentiment
+    def get_sentiment(self):
+        types = self.sentiment_types
+        upper = self.bbands[0]
+        middle = self.bbands[1]
+        lower = self.bbands[2]
+        price = self.price_history[-1]
+
+        if (len(self.sentiment) > 20):
+            self.sentiment.pop(0)
+
+        if (price < lower):
+            self.sentiment.append(types[0])
+        elif (price > upper):
+            self.sentiment.append(types[2])
+        else:
+            self.sentiment.append(types[1])
         pass
     pass
 
@@ -208,11 +301,23 @@ def initialize(context):
     # Security list
     context.securities = [tvix, vix]
 
-    set_benchmark(context.securities[0].sid)
-    set_benchmark(context.securities[0].sid)
+    #set_benchmark()
 
     # Minute timer for when to execute updates
     context.count = 0
+
+    # Prevents any short positions from being opened
+    set_long_only()
+
+    # Limits the absolute magnitude of any position held by the algorithm
+    #set_max_position_size(context.securities[0].sid, max_notional=50000)
+    #set_max_position_size(context.securities[1].sid, max_notional=50000)
+
+    # Set commission price
+    set_commission(commission.PerTrade(cost=0.00))
+
+    # Trade up to 50% of stock volume in a bar
+    set_slippage(slippage.FixedSlippage(spread=0.50))
 
     pass
 
@@ -228,32 +333,26 @@ def my_assign_weights(context, stock):
     """
     Assign weights to securities that we want to order.
     """
-    # Get RVI indicator
-    rvi = stock.rvi.rvis[3:][0]
-    signal_line = stock.rvi.signal_line[0]
-    rsi = stock.rsi.rsi
-    bbands = stock.bbands.bbands
+    types = stock.sentiment_types
 
-    # Signals
-    sentiment = stock.sentiment
-    rvi_signal = (signal_line > rvi)
-    # Add RSI
-    # Add BBands
+    # Get indicator sentiments
+    stock.get_sentiment()
+    sentiment = stock.sentiment[-1]
 
     #stock.print_stock()
 
     default_weight = (float(1)/float(len(context.securities)))
 
     # If signal line is bearish
-    if (rvi_signal & sentiment):
+    if (sentiment == types[0]):
         stock.weight = default_weight
-        #print ('bullish')
-    elif (rvi_signal):
-        stock.sentiment = True
-    else:
+        print ('buying')
+    elif (sentiment == types[2]):
         stock.weight = 0
-        stock.sentiment = False
-        #print ('bearish')
+        print ('selling')
+    else:
+        pass
+        #print ('holding')
     pass
 
 def my_rebalance(context, stock, data):
@@ -271,8 +370,8 @@ def my_record_vars(context, data):
     """
     Plot variables at the end of each day.
     """
-    record(TVIX = data.current(context.securities[0].sid, 'price'),
-           XIV = data.current(context.securities[1].sid, 'price'))
+    record(TVIX = context.portfolio.positions[context.securities[0].sid].amount,
+           XIV = context.portfolio.positions[context.securities[1].sid].amount)
     pass
 
 def handle_data(context, data):
@@ -281,12 +380,13 @@ def handle_data(context, data):
     """
     # Minute timer - every 4 mins
     context.count += 1
-    if(context.count == context.enough_data):
-        context.count = 0 # reset timer
-        for stock in context.securities:
+
+    for stock in context.securities:
+        stock.rsi.get_rsi(data)
+        stock.bbands.get_bbands(data)
+        if(context.count == context.enough_data):
+            context.count = 0 # reset timer
             stock.rvi.get_price_history(data)
-            stock.rsi.get_rsi(data)
-            stock.bbands.get_bbands(data)
             stock.rvi.numerators.append(stock.rvi.get_factors(stock, 'close', 'open'))
             stock.rvi.denominators.append(stock.rvi.get_factors(stock, 'high', 'low'))
             stock.rvi.rvis.append(check_data(stock.rvi.update_rvi_variables(stock)))
@@ -297,7 +397,8 @@ def handle_data(context, data):
                 stock.rvi.rvis.pop(0)
             else:
                 pass
-                #stock.print_stock()
+        my_assign_weights(context, stock)
+        my_rebalance(context, stock, data)
     pass
 
 # TODO: Need to check for Nan, None..
