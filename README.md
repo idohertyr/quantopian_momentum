@@ -1,12 +1,12 @@
-# quantopian_momentum
+quantopian_momentum
+----
 
+#### Author: Ian Doherty
+#### Date: April 13, 2017
 
-## Author: Ian Doherty
-## Date: April 13, 2017
+This algorithm holds indicators for trading momentum, it does not contain a strategy!
 
-These algorithms trade using Momentum stategies.
-
-### RVI (Relative Vigor Index)
+### RVI (Relative Vigor Index - Oscillator indicator)
 
 ##### INPUTS: OHLC prices
 
@@ -40,3 +40,27 @@ j = RVI // one bar prior to i
 k = RVI // one bar prior to j
 SIGNAL_LINE = (RVI + (2 * i) + (2 * j) + k) / 6
 ```
+
+### RSI (Relative Strength Index - Momentum indicator)
+```python
+RSI = 100-100/(1+RS)
+RS = Average gain of up periods w specifed period/
+    Average loss of down periods during a specified period
+```
+##### The RSI in this algorithm is calculated using talib
+
+### Bollinger bands ( - Volatility indicator)
+```python
+    1. Moving average
+    2. Upper band at K times an N-period standard deviation
+    3. Lower band at K times an N-period standard deviation
+```
+
+##### This Bollinger Bands in this algorithm is calculated with talib
+
+### CCI (Commodity channel index - Oscillator indicator)
+```python
+CCI = Price - MA / 0.015 x D
+```
+
+##### The CCI in this algorithm is calculated with talib
