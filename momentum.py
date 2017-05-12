@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import math
 import talib
+import datetime
+
 
 # Instrument Class
 class Stock:
@@ -17,9 +19,10 @@ class Stock:
         self.signal_line = list()
         self.should_trade = False
         self.sentiment = list()
-        self.rvi = RVI(self.sid, '1m', 4, 19)
-        self.rsi = RSI(self.sid, '1m', 20)
+        self.rvi = Rvi(self.sid, '1m', 4, 19)
+        self.rsi = Rsi(self.sid, '1m', 20)
         self.bbands = BBands(self.sid, '1m', 20)
+        self.cci = Cci(self.sid, '1m', 20)
         self.sentiment_types = ['buy', 'hold', 'sell']
         pass
 
@@ -30,20 +33,25 @@ class Stock:
 
     # Print out Stock info
     def print_stock(self):
-        #print ('SID: ' + str(self.sid))
-        #print ('Price History: ' + str(self.minute_history))
-        #print ('Numerators: ' + str(self.rvi.numerators))
-        #print ('Denominators: ' + str(self.rvi.denominators))
-        #print ('Weight: ' + str(self.weight))
-        #print ('RVIS: ' + str(self.rvi.rvis))
-        #print ('Signal Line: ' + str(self.rvi.signal_line))
-        #print ('Tradable: ' + str(self.should_trade))
-        #print ('RSI price history: ' + str(self.rsi.price_history))
-        #print ('RSI: ' + str(self.rsi.rsi))
-        #print ('BBANDS' + str(self.bbands.bbands))
-        #print ('RVI sentiment: ' + str(self.rvi.sentiment))
-        #print ('RSI sentiment: ' + str(self.rsi.sentiment))
-        #print ('BBands sentiment: ' + str(self.bbands.sentiment))
+        # Get the current exchange time in EST timezone:
+        exchange_time = pd.Timestamp(get_datetime()).tz_convert('US/Eastern')
+        print ('CURRENT TIME: ' + str(exchange_time))
+        # print ('SID: ' + str(self.sid))
+        # print ('Price History: ' + str(self.minute_history))
+        # print ('Numerators: ' + str(self.rvi.numerators))
+        # print ('Denominators: ' + str(self.rvi.denominators))
+        # print ('Weight: ' + str(self.weight))
+        # print ('RVIS: ' + str(self.rvi.rvis))
+        # print ('Signal Line: ' + str(self.rvi.signal_line))
+        # print ('Tradable: ' + str(self.should_trade))
+        print ('RSI price history: ' + str(self.rsi.price_history[-1]))
+        print ('RSI: ' + str(self.rsi.rsi[-1]))
+        # print ('BBANDS price history: ' + str(self.bbands.price_history[-1]))
+        # print ('BBANDS' + str(self.bbands.bbands))
+        # if (len(self.rvi.sentiment) > 0):
+        # print ('RVI sentiment: ' + str(self.rvi.sentiment[-1]))
+        print ('RSI sentiment: ' + str(self.rsi.sentiment))
+        # print ('BBands sentiment: ' + str(self.bbands.sentiment))
         print ('Stock sentiment: ' + str(self.sentiment))
         pass
 
@@ -58,24 +66,28 @@ class Stock:
 
         rsi_sentiment = self.rsi.sentiment[-1]
         bbands_sentiment = self.bbands.sentiment[-1]
+        cci_sentiment = self.cci.sentiment[-1]
 
         if (len(self.sentiment) > 10):
             self.sentiment.pop(0)
 
         if ((rvi_sentiment == types[0]) &
-                (rsi_sentiment == types[0]) &
-                (bbands_sentiment == types[0])):
+            (rsi_sentiment == types[0]) &
+            (cci_sentiment == types[0]) &
+            (bbands_sentiment == types[0])):
             self.sentiment.append(types[0])
         elif ((rvi_sentiment == types[2]) &
-                  (rsi_sentiment == types[2]) &
-                  (bbands_sentiment == types[2])):
+            (rsi_sentiment == types[2]) &
+            (cci_sentiment == types[2]) &
+            (bbands_sentiment == types[2])):
             self.sentiment.append(types[2])
         else:
             self.sentiment.append(types[1])
         pass
 
+
 # RSI Class
-class RSI:
+class Rsi:
     # Create a new RSI
     def __init__(self, sid, unit, sample):
         self.sid = sid
@@ -96,7 +108,7 @@ class RSI:
     def get_rsi(self, data):
         self.get_price_history(data)
         self.rsi.append(talib.RSI(self.price_history)[-1])
-        if(len(self.rsi) == 2):
+        if (len(self.rsi) == 2):
             self.rsi.pop(0)
         self.get_sentiment()
         pass
@@ -106,22 +118,22 @@ class RSI:
         types = self.sentiment_types
         rsi = self.rsi[-1]
 
-        if (len(self.sentiment) > 20):
+        if (len(self.sentiment) > 10):
             self.sentiment.pop(0)
 
-        if (rsi < 40):
+        if (rsi < 25):
             self.sentiment.append(types[0])
-        elif (rsi > 70):
+        elif (rsi > 65):
             self.sentiment.append(types[2])
         else:
             self.sentiment.append(types[1])
         pass
+
     pass
 
 
-
 # RVI Class
-class RVI:
+class Rvi:
     def __init__(self, sid, unit, sample, select_period):
         # SID
         self.sid = sid
@@ -166,7 +178,7 @@ class RVI:
             if (i == 3):
                 d = (minute_history[:-3][ohlc_type1] - minute_history[:-3][ohlc_type2])
         # Formula = ( a + (2 * b) + (2 * c) + d ) / 6
-        differences = ((float(a)+(2*float(b))+(2*float(c))+float(d))/6)
+        differences = ((float(a) + (2 * float(b)) + (2 * float(c)) + float(d)) / 6)
         differences = check_data(differences)
         return differences
 
@@ -190,11 +202,10 @@ class RVI:
             stock.rvi.period -= 1
 
             # Return RVI
-            return(num_sma/den_sma)
+            return (num_sma / den_sma)
         else:
             return float()
         pass
-
 
     # Get Signal Line for RVI
     def get_rvi_signal_line(self):
@@ -204,7 +215,7 @@ class RVI:
         b = self.rvis[2:3][0]
         c = self.rvis[1:2][0]
         d = self.rvis[:1][0]
-        self.signal_line.append(check_data(float(a)+(2*float(b))+(2*float(c))+float(d))/6)
+        self.signal_line.append(check_data(float(a) + (2 * float(b)) + (2 * float(c)) + float(d)) / 6)
         self.get_sentiment()
         pass
 
@@ -217,20 +228,25 @@ class RVI:
         if (len(self.sentiment) > 20):
             self.sentiment.pop(0)
 
-        if (signal_line > rvi):
+        if ((signal_line > rvi) & (rvi < 0)):
             self.sentiment.append(types[0])
-        elif (signal_line < rvi):
+            # log.info('RVI bull ' + str(signal_line) + str(rvi))
+        elif ((signal_line < rvi) & (rvi > 0)):
             self.sentiment.append(types[2])
+            # log.info('RVI bear ' + str(signal_line) + str(rvi))
         else:
             self.sentiment.append(types[1])
 
     pass
+
 
 # Bollinger Band Class
 class BBands:
     def __init__(self, sid, unit, sample):
         # SID
         self.sid = sid
+        # Price history
+        self.price_history = list()
         # Price history unit
         self.unit = unit
         # Price history sample size
@@ -250,10 +266,10 @@ class BBands:
         self.get_price_history(data)
         upper, middle, lower = talib.BBANDS(
             self.price_history,
-            timeperiod = self.sample,
-            nbdevup = 2,
-            nbdevdn = 2,
-            matype = 0)
+            timeperiod=self.sample,
+            nbdevup=2,
+            nbdevdn=2,
+            matype=0)
         self.bbands = [upper[-1], middle[-1], lower[-1]]
         self.get_sentiment()
         pass
@@ -266,7 +282,7 @@ class BBands:
         lower = self.bbands[2]
         price = self.price_history[-1]
 
-        if (len(self.sentiment) > 20):
+        if (len(self.sentiment) > 10):
             self.sentiment.pop(0)
 
         if (price < lower):
@@ -276,14 +292,64 @@ class BBands:
         else:
             self.sentiment.append(types[1])
         pass
+
     pass
+
+
+# CCI Class
+class Cci:
+    def __init__(self, sid, unit, sample):
+        self.sid = sid
+        self.unit = unit
+        self.sample = sample
+        self.highs = list()
+        self.lows = list()
+        self.closes = list()
+        self.ccis = list()
+        self.sentiment = list()
+        self.sentiment_types = ['buy', 'hold', 'sell']
+        pass
+
+    def get_price_history(self, data):
+        self.closes = data.history(self.sid, 'close', self.sample + 2, self.unit)
+        self.highs = data.history(self.sid, 'high', self.sample + 2, self.unit)
+        self.lows = data.history(self.sid, 'low', self.sample + 2, self.unit)
+        pass
+
+    def get_cci(self, data):
+        if (len(self.ccis) == 10):
+            self.ccis.pop(0)
+
+        self.get_price_history(data)
+        cci = talib.CCI(self.highs.values, self.lows.values, self.closes.values, self.sample)[-1]
+        self.ccis.append(cci)
+        self.get_sentiment()
+
+    def get_sentiment(self):
+        types = self.sentiment_types
+        cci = self.ccis[-1]
+
+        if (len(self.sentiment) > 10):
+            self.sentiment.pop(0)
+
+        if (cci < -200):
+            self.sentiment.append(types[0])
+        elif (cci > 200):
+            self.sentiment.append(types[2])
+        else:
+            self.sentiment.append(types[1])
+
+        pass
+
+    pass
+
 
 def initialize(context):
     """
     Called once at the start of the algorithm.
     """
 
-    # Close Trading in last 30 minutes
+    # Close Trading in last 15 minutes
     schedule_function(stop_trading, date_rules.every_day(), time_rules.market_close(minutes=15))
 
     # Record variables
@@ -293,15 +359,15 @@ def initialize(context):
     tvix = Stock(sid(40515))
 
     # Create XIV
-    vix = Stock(sid(40516))
+    xiv = Stock(sid(40516))
 
     # Enough data
     context.enough_data = 4
 
     # Security list
-    context.securities = [tvix, vix]
+    context.securities = [tvix, xiv]
 
-    #set_benchmark()
+    set_benchmark(context.securities[0].sid)
 
     # Minute timer for when to execute updates
     context.count = 0
@@ -310,24 +376,32 @@ def initialize(context):
     set_long_only()
 
     # Limits the absolute magnitude of any position held by the algorithm
-    #set_max_position_size(context.securities[0].sid, max_notional=50000)
-    #set_max_position_size(context.securities[1].sid, max_notional=50000)
+    # set_max_position_size(context.securities[0].sid, max_notional=50000)
+    # set_max_position_size(context.securities[1].sid, max_notional=50000)
 
     # Set commission price
     set_commission(commission.PerTrade(cost=0.00))
 
     # Trade up to 50% of stock volume in a bar
-    set_slippage(slippage.FixedSlippage(spread=0.50))
+    # set_slippage(slippage.FixedSlippage(spread=0.5))
 
     pass
+
+
+def start_trading(context, data):
+    print ('-----------START TRADING -----------')
+    for stock in context.securities:
+        stock.should_trade = True
+    pass
+
 
 def before_trading_start(context, data):
     """
     Called every day before market open.
     """
-    for stock in context.securities:
-        stock.should_trade = True
+    start_trading(context, data)
     pass
+
 
 def my_assign_weights(context, stock):
     """
@@ -339,40 +413,46 @@ def my_assign_weights(context, stock):
     stock.get_sentiment()
     sentiment = stock.sentiment[-1]
 
-    #stock.print_stock()
-
-    default_weight = (float(1)/float(len(context.securities)))
+    default_weight = (float(1) / float(len(context.securities)))
 
     # If signal line is bearish
-    if (sentiment == types[0]):
+    if ((sentiment == types[0]) &
+            stock.should_trade):
         stock.weight = default_weight
-        print ('buying')
-    elif (sentiment == types[2]):
+        log.info('BUYING+++++++++++++++++++++++++++++++++++++++ ' + str(stock.sid))
+        # stock.print_stock()
+    elif ((sentiment == types[2]) &
+              stock.should_trade):
         stock.weight = 0
-        print ('selling')
+        log.info('SELLING--------------------------------------- ' + str(stock.sid))
+        # stock.print_stock()
     else:
         pass
-        #print ('holding')
+        # print ('holding')
     pass
+
 
 def my_rebalance(context, stock, data):
     """
     Execute orders according to our schedule_function() timing. 
     """
     if ((data.can_trade(stock.sid)) &
-            (len(get_open_orders(stock.sid)) == 0) &
             (stock.should_trade) &
-            (context.portfolio.cash > 0)):
+            (len(get_open_orders(stock.sid)) == 0)):
         order_target_percent(stock.sid, stock.weight)
     pass
+
 
 def my_record_vars(context, data):
     """
     Plot variables at the end of each day.
     """
-    record(TVIX = context.portfolio.positions[context.securities[0].sid].amount,
-           XIV = context.portfolio.positions[context.securities[1].sid].amount)
+    record(
+        TVIX=context.portfolio.positions[context.securities[0].sid].amount,
+        XIV=context.portfolio.positions[context.securities[1].sid].amount
+    )
     pass
+
 
 def handle_data(context, data):
     """
@@ -384,13 +464,14 @@ def handle_data(context, data):
     for stock in context.securities:
         stock.rsi.get_rsi(data)
         stock.bbands.get_bbands(data)
-        if(context.count == context.enough_data):
-            context.count = 0 # reset timer
+        stock.cci.get_cci(data)
+        if (context.count == context.enough_data):
+            context.count = 0  # reset timer
             stock.rvi.get_price_history(data)
             stock.rvi.numerators.append(stock.rvi.get_factors(stock, 'close', 'open'))
             stock.rvi.denominators.append(stock.rvi.get_factors(stock, 'high', 'low'))
             stock.rvi.rvis.append(check_data(stock.rvi.update_rvi_variables(stock)))
-            if ((len(stock.rvi.rvis) > 3)): # If there is enough data for Signal Line Calculation
+            if ((len(stock.rvi.rvis) > 3)):  # If there is enough data for Signal Line Calculation
                 stock.rvi.get_rvi_signal_line()
                 my_assign_weights(context, stock)
                 my_rebalance(context, stock, data)
@@ -401,10 +482,11 @@ def handle_data(context, data):
         my_rebalance(context, stock, data)
     pass
 
+
 # TODO: Need to check for Nan, None..
 def check_data(data):
     new = list()
-    if (type(data) == list): # replaces Nan values from list
+    if (type(data) == list):  # replaces Nan values from list
         for item in data:
             if (item):
                 new.append(item)
